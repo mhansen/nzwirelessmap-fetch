@@ -12,7 +12,7 @@ COPY go.* ./
 RUN go mod download
 
 # Copy local code to the container image.
-COPY . ./
+COPY *.go ./
 
 # Build the binary.
 RUN CGO_ENABLED=0 GOOS=linux go build -mod=readonly -v -o server
@@ -25,6 +25,7 @@ RUN apk add --no-cache ca-certificates openjdk8-jre sqlite python3
 
 # Copy the binary to the production image from the builder stage.
 COPY --from=builder /app/server /server
+COPY mdb-sqlite.jar csv2json2.py select_point_to_point_links.sql /
 
 # Run the web service on container startup.
 CMD ["/server"]

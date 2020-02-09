@@ -2,8 +2,10 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -16,7 +18,10 @@ import (
 	"cloud.google.com/go/storage"
 )
 
-var prismURL = "https://www.rsm.govt.nz/assets/Uploads/documents/prism/prism.zip"
+var (
+	prismZipURL = flag.String("prism_zip_url", "https://www.rsm.govt.nz/assets/Uploads/documents/prism/prism.zip", "URL of zip to fetch")
+	bucketName  = flag.String("bucket_name", "nz-wireless-map", "Google Cloud Storage bucket name")
+)
 
 func fetchInternal(r *http.Request) error {
 	ctx := context.Background()
@@ -25,16 +30,16 @@ func fetchInternal(r *http.Request) error {
 		return fmt.Errorf("Couldn't create storage client: %v", err)
 	}
 
-	log.Printf("fetching %v\n", prismURL)
+	log.Printf("fetching %v\n", *prismZipURL)
 
-	zipTmp, err := ioutil.TempFile(os.TempDir(), "prism-zip")
+	zipTmp, err := ioutil.TempFile(os.TempDir(), "prism.zip")
 	if err != nil {
 		return fmt.Errorf("couldn't create temp file: %v", err)
 	}
 	defer zipTmp.Close()
 	defer os.Remove(zipTmp.Name())
 
-	resp, err := http.Get(prismURL)
+	resp, err := http.Get(*prismZipURL)
 	if err != nil {
 		return err
 	}
@@ -45,7 +50,7 @@ func fetchInternal(r *http.Request) error {
 		return err
 	}
 	log.Printf("fetched %v bytes\n", n)
-	bkt := client.Bucket("nz-wireless-map")
+	bkt := client.Bucket(*bucketName)
 	t := time.Now().UTC()
 	err = writeToGCS(ctx, bkt.Object("prism.zip/"+t.Format(time.RFC3339)), zipTmp)
 	if err != nil {
@@ -69,7 +74,7 @@ func fetchInternal(r *http.Request) error {
 	}
 	defer mdbR.Close()
 
-	mdbTmp, err := ioutil.TempFile(os.TempDir(), "prism-mdb")
+	mdbTmp, err := ioutil.TempFile(os.TempDir(), "prism.mdb")
 	if err != nil {
 		return fmt.Errorf("couldn't create temp file: %v", err)
 	}
@@ -84,7 +89,7 @@ func fetchInternal(r *http.Request) error {
 	}
 
 	// Make an output tmpfile
-	tmpSqlite, err := ioutil.TempFile(os.TempDir(), "prism-sqlite3")
+	tmpSqlite, err := ioutil.TempFile(os.TempDir(), "prism.sqlite3")
 	if err != nil {
 		return fmt.Errorf("couldn't create temp file: %v", err)
 	}
@@ -96,18 +101,14 @@ func fetchInternal(r *http.Request) error {
 	log.Printf("Converting to sqlite3: running %v\n", cmd.String())
 	javaOutput, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Println("java output:")
-		log.Println(javaOutput)
-		return fmt.Errorf("couldn't read output from java: %v", err)
+		return fmt.Errorf("couldn't read output from java: %v, output: %v", err, javaOutput)
 	}
 
 	// Analyze output with sqlite3
 	analyzeCmd := exec.Command("/usr/bin/sqlite3", tmpSqlite.Name(), "analyze main;")
 	analyzeOut, err := analyzeCmd.CombinedOutput()
 	if err != nil {
-		log.Println("sqlite3 output:")
-		log.Println(analyzeOut)
-		return fmt.Errorf("couldn't analyze db: %v", err)
+		return fmt.Errorf("couldn't analyze db: %v, output: %v", err, analyzeOut)
 	}
 
 	// Run SQL to ouput CSV
@@ -116,64 +117,84 @@ func fetchInternal(r *http.Request) error {
 		return err
 	}
 
-	tmpCsv, err := ioutil.TempFile(os.TempDir(), "prism-csv")
+	tmpCsv, err := ioutil.TempFile(os.TempDir(), "prism.csv")
 	if err != nil {
 		return fmt.Errorf("couldn't create temp file: %v", err)
 	}
 	defer tmpCsv.Close()
 	defer os.Remove(tmpCsv.Name())
 
+	var selectErr bytes.Buffer
 	selectCmd := exec.Command("/usr/bin/sqlite3", tmpSqlite.Name())
 	selectCmd.Stdin = sqlF
 	selectCmd.Stdout = tmpCsv
+	selectCmd.Stderr = &selectErr
 
 	err = selectCmd.Run()
 	if err != nil {
-		return fmt.Errorf("couldn't select: %v", err)
+		return fmt.Errorf("couldn't select: %v, stderr: %v", err, selectErr.String())
 	}
 
 	// Save CSV to GCS?
-	err = writeToGCS(ctx, bkt.Object("prism-csv/"+t.Format(time.RFC3339)), tmpCsv)
+	err = writeToGCS(ctx, bkt.Object("prism.csv/"+t.Format(time.RFC3339)), tmpCsv)
+	if err != nil {
+		return err
+	}
+
+	// Rewind again, ready to pipe in to next command.
+	_, err = tmpCsv.Seek(0, io.SeekStart)
 	if err != nil {
 		return err
 	}
 
 	// Convert CSV to JSON
-	tmpJSON, err := ioutil.TempFile(os.TempDir(), "prism-json")
+	tmpJSON, err := ioutil.TempFile(os.TempDir(), "prism.json")
 	if err != nil {
 		return fmt.Errorf("couldn't create temp file: %v", err)
 	}
 	defer tmpJSON.Close()
 	defer os.Remove(tmpJSON.Name())
 
+	var jsonErr bytes.Buffer
 	jsonCmd := exec.Command("/usr/bin/python3", "csv2json2.py")
 	jsonCmd.Stdout = tmpJSON
 	jsonCmd.Stdin = tmpCsv
+	jsonCmd.Stderr = &jsonErr
+	err = jsonCmd.Run()
+	if err != nil {
+		return fmt.Errorf("couldn't convert to json: %v, stderr: %v", err, jsonErr.String())
+	}
 
 	// Save JSON to GCS?
-	err = writeToGCS(ctx, bkt.Object("prism-json/"+t.Format(time.RFC3339)), tmpJSON)
+	err = writeToGCS(ctx, bkt.Object("prism.json/"+t.Format(time.RFC3339)), tmpJSON)
+	if err != nil {
+		return err
+	}
+	err = writeToGCS(ctx, bkt.Object("prism.json/latest"), tmpJSON)
 	if err != nil {
 		return err
 	}
 
-	// Notify?
-	// Save to a well-known location, maybe?
-	// Update a symlink?
-
 	return nil
 }
 
-func writeToGCS(ctx context.Context, o *storage.ObjectHandle, r io.Reader) error {
+func writeToGCS(ctx context.Context, o *storage.ObjectHandle, f *os.File) error {
 	log.Printf("writing to GCS: %v\n", o.ObjectName())
+	// We've just written to most of these files, so cursor is at the end. Rewind.
+	_, err := f.Seek(0, io.SeekStart)
+	if err != nil {
+		return err
+	}
 	w := o.NewWriter(ctx)
-	_, err := io.Copy(w, r)
+	_, err = io.Copy(w, f)
 	if err != nil {
 		return fmt.Errorf("error writing to cloud storage: %v", err)
 	}
 	if err := w.Close(); err != nil {
 		return fmt.Errorf("error closing cloud storage writer: %v", err)
 	}
-	log.Printf("finished writing to GCS: %v\n", o.ObjectName())
+	a := w.Attrs()
+	log.Printf("finished writing %v bytes to GCS bucket: %v, name: %v\n", a.Size, a.Bucket, a.Name)
 	return nil
 }
 
@@ -198,6 +219,7 @@ func findPrismMdb(r *zip.ReadCloser) (*zip.File, error) {
 }
 
 func main() {
+	flag.Parse()
 	log.Print("Fetch server started.")
 
 	http.HandleFunc("/fetch", fetch)

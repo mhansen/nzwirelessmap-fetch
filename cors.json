@@ -1,0 +1,19 @@
+[
+  {
+    "origin": [
+      "http://lvh.me:3000",
+      "http://localhost:3000",
+      "https://nzwirelessmap-firebase.firebaseapp.com",
+      "https://wirelessmap.markhansen.co.nz"
+    ],
+    "responseHeader": [
+      "Content-Type"
+    ],
+    "method": [
+      "GET",
+      "HEAD",
+      "DELETE"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

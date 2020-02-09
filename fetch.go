@@ -135,7 +135,7 @@ func fetchInternal(r *http.Request) error {
 		return fmt.Errorf("couldn't select: %v, stderr: %v", err, selectErr.String())
 	}
 
-	// Save CSV to GCS?
+	// Save CSV to GCS
 	err = writeToGCS(ctx, bkt.Object("prism.csv/"+t.Format(time.RFC3339)), tmpCsv)
 	if err != nil {
 		return err
@@ -165,7 +165,7 @@ func fetchInternal(r *http.Request) error {
 		return fmt.Errorf("couldn't convert to json: %v, stderr: %v", err, jsonErr.String())
 	}
 
-	// Save JSON to GCS?
+	// Save JSON to GCS
 	err = writeToGCS(ctx, bkt.Object("prism.json/"+t.Format(time.RFC3339)), tmpJSON)
 	if err != nil {
 		return err

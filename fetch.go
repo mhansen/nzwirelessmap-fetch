@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"cloud.google.com/go/storage"
 )
@@ -36,7 +37,7 @@ func fetch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	bkt := client.Bucket("nz-wireless-map")
-	obj := bkt.Object("prism/today")
+	obj := bkt.Object("prism/" + time.Now().UTC().Format(time.RFC3339))
 	objW := obj.NewWriter(context.Background())
 	_, err = objW.Write(body)
 	if err != nil {

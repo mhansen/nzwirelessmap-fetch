@@ -44,6 +44,14 @@ func fetchInternal(r *http.Request) error {
 		return err
 	}
 	defer resp.Body.Close()
+	log.Printf("Headers: %+v\n", resp.Header)
+	lm := resp.Header.Get("Last-Modified")
+	log.Printf("Last Modified: %v\n", lm)
+	lmt, err := time.Parse(http.TimeFormat, lm)
+	if err != nil {
+		return fmt.Errorf("Couldn't parse Last-Modified header %q: %v", lm, err)
+	}
+	log.Printf("Last Modified time: %v\n", lmt)
 
 	n, err := io.Copy(zipTmp, resp.Body)
 	if err != nil {
@@ -51,7 +59,7 @@ func fetchInternal(r *http.Request) error {
 	}
 	log.Printf("fetched %v bytes\n", n)
 	bkt := client.Bucket(*bucketName)
-	t := time.Now().UTC()
+	t := lmt
 	err = writeToGCS(ctx, bkt.Object("prism.zip/"+t.Format(time.RFC3339)), zipTmp)
 	if err != nil {
 		return err

@@ -82,9 +82,9 @@ func fetchInternal(r *http.Request) error {
 	}
 	defer mdbR.Close()
 
-	mdbTmp, err := ioutil.TempFile(os.TempDir(), "prism.mdb")
+	mdbTmp, err := tempFile("prism.mdb")
 	if err != nil {
-		return fmt.Errorf("couldn't create temp file: %v", err)
+		return err
 	}
 	defer mdbTmp.Close()
 	defer os.Remove(mdbTmp.Name())
@@ -97,9 +97,9 @@ func fetchInternal(r *http.Request) error {
 	}
 
 	// Make an output tmpfile
-	tmpSqlite, err := ioutil.TempFile(os.TempDir(), "prism.sqlite3")
+	tmpSqlite, err := tempFile("prism.sqlite3")
 	if err != nil {
-		return fmt.Errorf("couldn't create temp file: %v", err)
+		return err
 	}
 	defer tmpSqlite.Close()
 	defer os.Remove(tmpSqlite.Name())
@@ -110,9 +110,9 @@ func fetchInternal(r *http.Request) error {
 		return err
 	}
 
-	tmpCSV, err := ioutil.TempFile(os.TempDir(), "prism.csv")
+	tmpCSV, err := tempFile("prism.csv")
 	if err != nil {
-		return fmt.Errorf("couldn't create temp file: %v", err)
+		return err
 	}
 	defer tmpCSV.Close()
 	defer os.Remove(tmpCSV.Name())
@@ -135,9 +135,9 @@ func fetchInternal(r *http.Request) error {
 	}
 
 	// Convert CSV to JSON
-	tmpJSON, err := ioutil.TempFile(os.TempDir(), "prism.json")
+	tmpJSON, err := tempFile("prism.json")
 	if err != nil {
-		return fmt.Errorf("couldn't create temp file: %v", err)
+		return err
 	}
 	defer tmpJSON.Close()
 	defer os.Remove(tmpJSON.Name())
@@ -178,6 +178,7 @@ func mdbToSqlite(mdbTmp *os.File, tmpSqlite *os.File) error {
 	return nil
 }
 
+// tempFile creates a temporary file. It's the caller's responsibility to close and delete the file.
 func tempFile(pattern string) (f *os.File, err error) {
 	f, err := ioutil.TempFile(os.TempDir(), pattern)
 	if err != nil {

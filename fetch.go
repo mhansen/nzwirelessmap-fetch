@@ -32,9 +32,9 @@ func fetchInternal(r *http.Request) error {
 
 	log.Printf("fetching %v\n", *prismZipURL)
 
-	zipTmp, err := ioutil.TempFile(os.TempDir(), "prism.zip")
+	zipTmp, err := tempFile("prism.zip")
 	if err != nil {
-		return fmt.Errorf("couldn't create temp file: %v", err)
+		return err
 	}
 	defer zipTmp.Close()
 	defer os.Remove(zipTmp.Name())
@@ -176,6 +176,13 @@ func mdbToSqlite(mdbTmp *os.File, tmpSqlite *os.File) error {
 		return fmt.Errorf("couldn't analyze db: %v, output: %v", err, analyzeOut)
 	}
 	return nil
+}
+
+func tempFile(pattern string) (f *os.File, err error) {
+	f, err := ioutil.TempFile(os.TempDir(), pattern)
+	if err != nil {
+		err = fmt.Errorf("couldn't create temp file: %v", err)
+	}
 }
 
 func querySqliteToCSV(tmpSqlite *os.File, tmpCsv io.Writer) error {

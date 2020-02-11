@@ -72,11 +72,13 @@ func fetchInternal(r *http.Request) error {
 		return fmt.Errorf("error opening zip: %v", err)
 	}
 	defer zipR.Close()
+
 	log.Println("finding prism.mdb")
 	prismMDB, err := findPrismMdb(zipR)
 	if err != nil {
 		return fmt.Errorf("couldn't find prism.mdb: %v", err)
 	}
+
 	log.Println("opening prism.mdb")
 	mdbR, err := prismMDB.Open()
 	if err != nil {
@@ -120,6 +122,12 @@ func fetchInternal(r *http.Request) error {
 	defer os.Remove(tmpCSV.Name())
 
 	err = querySqliteToCSV(tmpSqlite, tmpCSV)
+	if err != nil {
+		return err
+	}
+
+	// Rewind, ready to pipe in to next command.
+	_, err = tmpCSV.Seek(0, io.SeekStart)
 	if err != nil {
 		return err
 	}

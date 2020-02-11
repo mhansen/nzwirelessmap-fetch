@@ -105,42 +105,21 @@ func fetchInternal(r *http.Request) error {
 	defer os.Remove(tmpSqlite.Name())
 
 	// Convert to sqlite3
-	cmd := exec.Command("/usr/bin/java", "-jar", "mdb-sqlite.jar", mdbTmp.Name(), tmpSqlite.Name())
-	log.Printf("Converting to sqlite3: running %v\n", cmd.String())
-	javaOutput, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("couldn't read output from java: %v, output: %v", err, javaOutput)
-	}
-
-	// Analyze output with sqlite3
-	analyzeCmd := exec.Command("/usr/bin/sqlite3", tmpSqlite.Name(), "analyze main;")
-	analyzeOut, err := analyzeCmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("couldn't analyze db: %v, output: %v", err, analyzeOut)
-	}
-
-	// Run SQL to ouput CSV
-	sqlF, err := os.Open("select_point_to_point_links.sql")
+	err = mdbToSqlite(mdbTmp, tmpSqlite)
 	if err != nil {
 		return err
 	}
 
-	tmpCsv, err := ioutil.TempFile(os.TempDir(), "prism.csv")
+	tmpCSV, err := ioutil.TempFile(os.TempDir(), "prism.csv")
 	if err != nil {
 		return fmt.Errorf("couldn't create temp file: %v", err)
 	}
-	defer tmpCsv.Close()
-	defer os.Remove(tmpCsv.Name())
+	defer tmpCSV.Close()
+	defer os.Remove(tmpCSV.Name())
 
-	var selectErr bytes.Buffer
-	selectCmd := exec.Command("/usr/bin/sqlite3", tmpSqlite.Name())
-	selectCmd.Stdin = sqlF
-	selectCmd.Stdout = tmpCsv
-	selectCmd.Stderr = &selectErr
-
-	err = selectCmd.Run()
+	err = querySqliteToCSV(tmpSqlite, tmpCSV)
 	if err != nil {
-		return fmt.Errorf("couldn't select: %v, stderr: %v", err, selectErr.String())
+		return err
 	}
 
 	// Save CSV to GCS
@@ -163,14 +142,9 @@ func fetchInternal(r *http.Request) error {
 	defer tmpJSON.Close()
 	defer os.Remove(tmpJSON.Name())
 
-	var jsonErr bytes.Buffer
-	jsonCmd := exec.Command("/usr/bin/python3", "csv2json2.py")
-	jsonCmd.Stdout = tmpJSON
-	jsonCmd.Stdin = tmpCsv
-	jsonCmd.Stderr = &jsonErr
-	err = jsonCmd.Run()
+	err = csvToJson(tmpCsv, tmpJSON)
 	if err != nil {
-		return fmt.Errorf("couldn't convert to json: %v, stderr: %v", err, jsonErr.String())
+		return err
 	}
 
 	// Save JSON to GCS
@@ -183,6 +157,56 @@ func fetchInternal(r *http.Request) error {
 		return err
 	}
 
+	return nil
+}
+
+func mdbToSqlite(mdbTmp *os.File, tmpSqlite *os.File) error {
+	// Convert to sqlite3
+	cmd := exec.Command("/usr/bin/java", "-jar", "mdb-sqlite.jar", mdbTmp.Name(), tmpSqlite.Name())
+	log.Printf("Converting to sqlite3: running %v\n", cmd.String())
+	javaOutput, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("couldn't read output from java: %v, output: %v", err, javaOutput)
+	}
+
+	// Analyze output with sqlite3
+	analyzeCmd := exec.Command("/usr/bin/sqlite3", tmpSqlite.Name(), "analyze main;")
+	analyzeOut, err := analyzeCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("couldn't analyze db: %v, output: %v", err, analyzeOut)
+	}
+}
+
+func querySqliteToCSV(tmpSqlite *os.File, tmpCsv io.Writer) error {
+	// Run SQL to ouput CSV
+	sqlF, err := os.Open("select_point_to_point_links.sql")
+	if err != nil {
+		return err
+	}
+
+	var selectErr bytes.Buffer
+	selectCmd := exec.Command("/usr/bin/sqlite3", tmpSqlite.Name())
+	selectCmd.Stdin = sqlF
+	selectCmd.Stdout = tmpCsv
+	selectCmd.Stderr = &selectErr
+
+	err = selectCmd.Run()
+	if err != nil {
+		return fmt.Errorf("couldn't select: %v, stderr: %v", err, selectErr.String())
+	}
+	return nil
+}
+
+func csvToJson(tmpCsv io.Reader, tmpJSON io.Writer) error {
+	var jsonErr bytes.Buffer
+	jsonCmd := exec.Command("/usr/bin/python3", "csv2json2.py")
+	jsonCmd.Stdout = tmpJSON
+	jsonCmd.Stdin = tmpCsv
+	jsonCmd.Stderr = &jsonErr
+	err := jsonCmd.Run()
+	if err != nil {
+		return fmt.Errorf("couldn't convert to json: %v, stderr: %v", err, jsonErr.String())
+	}
 	return nil
 }
 

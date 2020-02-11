@@ -71,6 +71,7 @@ func fetchInternal(r *http.Request) error {
 	if err != nil {
 		return fmt.Errorf("error opening zip: %v", err)
 	}
+	defer zipR.Close()
 	log.Println("finding prism.mdb")
 	prismMDB, err := findPrismMdb(zipR)
 	if err != nil {

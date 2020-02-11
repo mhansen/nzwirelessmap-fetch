@@ -44,12 +44,12 @@ func fetchInternal(r *http.Request) error {
 		return err
 	}
 	defer resp.Body.Close()
+
 	log.Printf("Headers: %+v\n", resp.Header)
-	lm := resp.Header.Get("Last-Modified")
-	log.Printf("Last Modified: %v\n", lm)
-	lmt, err := time.Parse(http.TimeFormat, lm)
+
+	lmt, err := lastModifiedTime(resp)
 	if err != nil {
-		return fmt.Errorf("Couldn't parse Last-Modified header %q: %v", lm, err)
+		return err
 	}
 	log.Printf("Last Modified time: %v\n", lmt)
 
@@ -58,6 +58,7 @@ func fetchInternal(r *http.Request) error {
 		return err
 	}
 	log.Printf("fetched %v bytes\n", n)
+
 	bkt := client.Bucket(*bucketName)
 	t := lmt
 	err = writeToGCS(ctx, bkt.Object("prism.zip/"+t.Format(time.RFC3339)), zipTmp)
@@ -160,6 +161,16 @@ func fetchInternal(r *http.Request) error {
 	return nil
 }
 
+func lastModifiedTime(resp *http.Response) (lmt time.Time, err error) {
+	lm := resp.Header.Get("Last-Modified")
+	log.Printf("Last Modified: %v\n", lm)
+	lmt, err = time.Parse(http.TimeFormat, lm)
+	if err != nil {
+		err = fmt.Errorf("Couldn't parse Last-Modified header %q: %v", lm, err)
+	}
+	return
+}
+
 func mdbToSqlite(mdbTmp *os.File, tmpSqlite *os.File) error {
 	// Convert to sqlite3
 	cmd := exec.Command("/usr/bin/java", "-jar", "mdb-sqlite.jar", mdbTmp.Name(), tmpSqlite.Name())
@@ -180,10 +191,11 @@ func mdbToSqlite(mdbTmp *os.File, tmpSqlite *os.File) error {
 
 // tempFile creates a temporary file. It's the caller's responsibility to close and delete the file.
 func tempFile(pattern string) (f *os.File, err error) {
-	f, err := ioutil.TempFile(os.TempDir(), pattern)
+	f, err = ioutil.TempFile(os.TempDir(), pattern)
 	if err != nil {
 		err = fmt.Errorf("couldn't create temp file: %v", err)
 	}
+	return
 }
 
 func querySqliteToCSV(tmpSqlite *os.File, tmpCsv io.Writer) error {

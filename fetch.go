@@ -123,13 +123,13 @@ func fetchInternal(r *http.Request) error {
 	}
 
 	// Save CSV to GCS
-	err = writeToGCS(ctx, bkt.Object("prism.csv/"+t.Format(time.RFC3339)), tmpCsv)
+	err = writeToGCS(ctx, bkt.Object("prism.csv/"+t.Format(time.RFC3339)), tmpCSV)
 	if err != nil {
 		return err
 	}
 
 	// Rewind again, ready to pipe in to next command.
-	_, err = tmpCsv.Seek(0, io.SeekStart)
+	_, err = tmpCSV.Seek(0, io.SeekStart)
 	if err != nil {
 		return err
 	}
@@ -142,7 +142,7 @@ func fetchInternal(r *http.Request) error {
 	defer tmpJSON.Close()
 	defer os.Remove(tmpJSON.Name())
 
-	err = csvToJson(tmpCsv, tmpJSON)
+	err = csvToJSON(tmpCSV, tmpJSON)
 	if err != nil {
 		return err
 	}
@@ -175,6 +175,7 @@ func mdbToSqlite(mdbTmp *os.File, tmpSqlite *os.File) error {
 	if err != nil {
 		return fmt.Errorf("couldn't analyze db: %v, output: %v", err, analyzeOut)
 	}
+	return nil
 }
 
 func querySqliteToCSV(tmpSqlite *os.File, tmpCsv io.Writer) error {
@@ -197,7 +198,7 @@ func querySqliteToCSV(tmpSqlite *os.File, tmpCsv io.Writer) error {
 	return nil
 }
 
-func csvToJson(tmpCsv io.Reader, tmpJSON io.Writer) error {
+func csvToJSON(tmpCsv io.Reader, tmpJSON io.Writer) error {
 	var jsonErr bytes.Buffer
 	jsonCmd := exec.Command("/usr/bin/python3", "csv2json2.py")
 	jsonCmd.Stdout = tmpJSON

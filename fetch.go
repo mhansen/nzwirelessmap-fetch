@@ -151,6 +151,7 @@ func mdbToSqlite(mdbTmp *os.File, tmpSqlite *os.File) error {
 
 	// Analyze output with sqlite3
 	analyzeCmd := exec.Command("/usr/bin/sqlite3", tmpSqlite.Name(), "analyze main;")
+	log.Printf("Analyzing database in sqlite: running %v\n", analyzeCmd.String())
 	if analyzeOut, err := analyzeCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("couldn't analyze db: %v, output: %v", err, analyzeOut)
 	}

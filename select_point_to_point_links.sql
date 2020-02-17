@@ -48,14 +48,14 @@ rxgeoref.northing as rx_lat
 
 from receiveconfiguration 
 
-JOIN transmitconfiguration using (licenceid) 
-JOIN location as rxlocation on rxlocation.locationid = receiveconfiguration.locationid 
-JOIN location as txlocation on txlocation.locationid = transmitconfiguration.locationid
-JOIN geographicreference as rxgeoref on rxlocation.locationid = rxgeoref.locationid
-JOIN geographicreference as txgeoref on txlocation.locationid = txgeoref.locationid
-JOIN licence on receiveconfiguration.licenceid = licence.licenceid
-JOIN clientname on licence.clientid = clientname.clientid
-JOIN spectrum on spectrum.licenceid = licence.licenceid
+join transmitconfiguration using (licenceid) 
+join location as rxlocation on rxlocation.locationid = receiveconfiguration.locationid 
+join location as txlocation on txlocation.locationid = transmitconfiguration.locationid
+join geographicreference as rxgeoref on rxlocation.locationid = rxgeoref.locationid
+join geographicreference as txgeoref on txlocation.locationid = txgeoref.locationid
+join licence on receiveconfiguration.licenceid = licence.licenceid
+join clientname on licence.clientid = clientname.clientid
+join spectrum on spectrum.licenceid = licence.licenceid
 
 -- Each location has heaps of different geographic reference schema, like old
 -- surveying methods. We're only interested in WGS84, because that's the

@@ -32,13 +32,6 @@ func fetchInternal(r *http.Request) error {
 
 	log.Printf("fetching %v\n", *prismZipURL)
 
-	zipTmp, err := tempFile("prism.zip")
-	if err != nil {
-		return err
-	}
-	defer zipTmp.Close()
-	defer os.Remove(zipTmp.Name())
-
 	resp, err := http.Get(*prismZipURL)
 	if err != nil {
 		return err
@@ -53,7 +46,8 @@ func fetchInternal(r *http.Request) error {
 	}
 	log.Printf("Last Modified time: %v\n", lmt)
 
-	n, err := io.Copy(zipTmp, resp.Body)
+	var zipTmp bytes.Buffer
+	n, err := io.Copy(&zipTmp, resp.Body)
 	if err != nil {
 		return err
 	}
@@ -61,19 +55,15 @@ func fetchInternal(r *http.Request) error {
 
 	bkt := client.Bucket(*bucketName)
 	t := lmt
-	if _, err := zipTmp.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	if err = writeToGCS(ctx, bkt.Object("prism.zip/"+t.Format(time.RFC3339)), zipTmp); err != nil {
+	if err = writeToGCS(ctx, bkt.Object("prism.zip/"+t.Format(time.RFC3339)), bytes.NewReader(zipTmp.Bytes())); err != nil {
 		return err
 	}
 
 	log.Println("opening zip")
-	zipR, err := zip.OpenReader(zipTmp.Name())
+	zipR, err := zip.NewReader(bytes.NewReader(zipTmp.Bytes()), int64(zipTmp.Len()))
 	if err != nil {
 		return fmt.Errorf("error opening zip: %v", err)
 	}
-	defer zipR.Close()
 
 	log.Println("finding prism.mdb")
 	prismMDB, err := findPrismMdb(zipR)
@@ -115,53 +105,27 @@ func fetchInternal(r *http.Request) error {
 		return err
 	}
 
-	tmpCSV, err := tempFile("prism.csv")
-	if err != nil {
-		return err
-	}
-	defer tmpCSV.Close()
-	defer os.Remove(tmpCSV.Name())
-
-	if err := querySqliteToCSV(tmpSqlite, tmpCSV); err != nil {
+	var tmpCSV bytes.Buffer
+	if err := querySqliteToCSV(tmpSqlite, &tmpCSV); err != nil {
 		return err
 	}
 
 	// Save CSV to GCS
-	if _, err := tmpCSV.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	if err := writeToGCS(ctx, bkt.Object("prism.csv/"+t.Format(time.RFC3339)), tmpCSV); err != nil {
-		return err
-	}
-
-	// Rewind again, ready to pipe in to next command.
-	if _, err := tmpCSV.Seek(0, io.SeekStart); err != nil {
+	if err := writeToGCS(ctx, bkt.Object("prism.csv/"+t.Format(time.RFC3339)), bytes.NewReader(tmpCSV.Bytes())); err != nil {
 		return err
 	}
 
 	// Convert CSV to JSON
-	tmpJSON, err := tempFile("prism.json")
-	if err != nil {
-		return err
-	}
-	defer tmpJSON.Close()
-	defer os.Remove(tmpJSON.Name())
-
-	if err = csvToJSON(tmpCSV, tmpJSON); err != nil {
+	var tmpJSON bytes.Buffer
+	if err = csvToJSON(bytes.NewReader(tmpCSV.Bytes()), &tmpJSON); err != nil {
 		return err
 	}
 
 	// Save JSON to GCS
-	if _, err := tmpJSON.Seek(0, io.SeekStart); err != nil {
+	if err := writeToGCS(ctx, bkt.Object("prism.json/"+t.Format(time.RFC3339)), bytes.NewReader(tmpJSON.Bytes())); err != nil {
 		return err
 	}
-	if err := writeToGCS(ctx, bkt.Object("prism.json/"+t.Format(time.RFC3339)), tmpJSON); err != nil {
-		return err
-	}
-	if _, err := tmpJSON.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	if err := writeToGCS(ctx, bkt.Object("prism.json/latest"), tmpJSON); err != nil {
+	if err := writeToGCS(ctx, bkt.Object("prism.json/latest"), bytes.NewReader(tmpJSON.Bytes())); err != nil {
 		return err
 	}
 
@@ -259,7 +223,7 @@ func fetch(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "OK")
 }
 
-func findPrismMdb(r *zip.ReadCloser) (*zip.File, error) {
+func findPrismMdb(r *zip.Reader) (*zip.File, error) {
 	for _, f := range r.File {
 		if f.Name == "prism.mdb" {
 			return f, nil

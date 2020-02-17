@@ -61,8 +61,7 @@ func fetchInternal(r *http.Request) error {
 
 	bkt := client.Bucket(*bucketName)
 	t := lmt
-	err = writeToGCS(ctx, bkt.Object("prism.zip/"+t.Format(time.RFC3339)), zipTmp)
-	if err != nil {
+	if err = writeToGCS(ctx, bkt.Object("prism.zip/"+t.Format(time.RFC3339)), zipTmp); err != nil {
 		return err
 	}
 
@@ -109,8 +108,7 @@ func fetchInternal(r *http.Request) error {
 	defer os.Remove(tmpSqlite.Name())
 
 	// Convert to sqlite3
-	err = mdbToSqlite(mdbTmp, tmpSqlite)
-	if err != nil {
+	if err := mdbToSqlite(mdbTmp, tmpSqlite); err != nil {
 		return err
 	}
 
@@ -121,26 +119,22 @@ func fetchInternal(r *http.Request) error {
 	defer tmpCSV.Close()
 	defer os.Remove(tmpCSV.Name())
 
-	err = querySqliteToCSV(tmpSqlite, tmpCSV)
-	if err != nil {
+	if err := querySqliteToCSV(tmpSqlite, tmpCSV); err != nil {
 		return err
 	}
 
 	// Rewind, ready to pipe in to next command.
-	_, err = tmpCSV.Seek(0, io.SeekStart)
-	if err != nil {
+	if _, err := tmpCSV.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
 
 	// Save CSV to GCS
-	err = writeToGCS(ctx, bkt.Object("prism.csv/"+t.Format(time.RFC3339)), tmpCSV)
-	if err != nil {
+	if err := writeToGCS(ctx, bkt.Object("prism.csv/"+t.Format(time.RFC3339)), tmpCSV); err != nil {
 		return err
 	}
 
 	// Rewind again, ready to pipe in to next command.
-	_, err = tmpCSV.Seek(0, io.SeekStart)
-	if err != nil {
+	if _, err := tmpCSV.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
 
@@ -152,18 +146,15 @@ func fetchInternal(r *http.Request) error {
 	defer tmpJSON.Close()
 	defer os.Remove(tmpJSON.Name())
 
-	err = csvToJSON(tmpCSV, tmpJSON)
-	if err != nil {
+	if err = csvToJSON(tmpCSV, tmpJSON); err != nil {
 		return err
 	}
 
 	// Save JSON to GCS
-	err = writeToGCS(ctx, bkt.Object("prism.json/"+t.Format(time.RFC3339)), tmpJSON)
-	if err != nil {
+	if err := writeToGCS(ctx, bkt.Object("prism.json/"+t.Format(time.RFC3339)), tmpJSON); err != nil {
 		return err
 	}
-	err = writeToGCS(ctx, bkt.Object("prism.json/latest"), tmpJSON)
-	if err != nil {
+	if err := writeToGCS(ctx, bkt.Object("prism.json/latest"), tmpJSON); err != nil {
 		return err
 	}
 
@@ -173,8 +164,7 @@ func fetchInternal(r *http.Request) error {
 func lastModifiedTime(resp *http.Response) (lmt time.Time, err error) {
 	lm := resp.Header.Get("Last-Modified")
 	log.Printf("Last Modified: %v\n", lm)
-	lmt, err = time.Parse(http.TimeFormat, lm)
-	if err != nil {
+	if lmt, err = time.Parse(http.TimeFormat, lm); err != nil {
 		err = fmt.Errorf("Couldn't parse Last-Modified header %q: %v", lm, err)
 	}
 	return
@@ -184,15 +174,13 @@ func mdbToSqlite(mdbTmp *os.File, tmpSqlite *os.File) error {
 	// Convert to sqlite3
 	cmd := exec.Command("/usr/bin/java", "-jar", "mdb-sqlite.jar", mdbTmp.Name(), tmpSqlite.Name())
 	log.Printf("Converting to sqlite3: running %v\n", cmd.String())
-	javaOutput, err := cmd.CombinedOutput()
-	if err != nil {
+	if javaOutput, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("couldn't read output from java: %v, output: %v", err, javaOutput)
 	}
 
 	// Analyze output with sqlite3
 	analyzeCmd := exec.Command("/usr/bin/sqlite3", tmpSqlite.Name(), "analyze main;")
-	analyzeOut, err := analyzeCmd.CombinedOutput()
-	if err != nil {
+	if analyzeOut, err := analyzeCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("couldn't analyze db: %v, output: %v", err, analyzeOut)
 	}
 	return nil
@@ -200,8 +188,7 @@ func mdbToSqlite(mdbTmp *os.File, tmpSqlite *os.File) error {
 
 // tempFile creates a temporary file. It's the caller's responsibility to close and delete the file.
 func tempFile(pattern string) (f *os.File, err error) {
-	f, err = ioutil.TempFile(os.TempDir(), pattern)
-	if err != nil {
+	if f, err = ioutil.TempFile(os.TempDir(), pattern); err != nil {
 		err = fmt.Errorf("couldn't create temp file: %v", err)
 	}
 	return
@@ -220,8 +207,7 @@ func querySqliteToCSV(tmpSqlite *os.File, tmpCsv io.Writer) error {
 	selectCmd.Stdout = tmpCsv
 	selectCmd.Stderr = &selectErr
 
-	err = selectCmd.Run()
-	if err != nil {
+	if err := selectCmd.Run(); err != nil {
 		return fmt.Errorf("couldn't select: %v, stderr: %v", err, selectErr.String())
 	}
 	return nil
@@ -233,8 +219,7 @@ func csvToJSON(tmpCsv io.Reader, tmpJSON io.Writer) error {
 	jsonCmd.Stdout = tmpJSON
 	jsonCmd.Stdin = tmpCsv
 	jsonCmd.Stderr = &jsonErr
-	err := jsonCmd.Run()
-	if err != nil {
+	if err := jsonCmd.Run(); err != nil {
 		return fmt.Errorf("couldn't convert to json: %v, stderr: %v", err, jsonErr.String())
 	}
 	return nil
@@ -243,12 +228,11 @@ func csvToJSON(tmpCsv io.Reader, tmpJSON io.Writer) error {
 func writeToGCS(ctx context.Context, o *storage.ObjectHandle, f *os.File) error {
 	log.Printf("writing to GCS: %v\n", o.ObjectName())
 	// We've just written to most of these files, so cursor is at the end. Rewind.
-	_, err := f.Seek(0, io.SeekStart)
-	if err != nil {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
 	w := o.NewWriter(ctx)
-	_, err = io.Copy(w, f)
+	_, err := io.Copy(w, f)
 	if err != nil {
 		return fmt.Errorf("error writing to cloud storage: %v", err)
 	}

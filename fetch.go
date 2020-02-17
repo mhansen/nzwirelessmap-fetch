@@ -173,12 +173,13 @@ func querySqliteToCSV(tmpSqlite *os.File, tmpCsv io.Writer) error {
 	}
 
 	var selectErr bytes.Buffer
-	selectCmd := exec.Command("/usr/bin/sqlite3", tmpSqlite.Name())
-	selectCmd.Stdin = sqlF
-	selectCmd.Stdout = tmpCsv
-	selectCmd.Stderr = &selectErr
+	c := exec.Command("/usr/bin/sqlite3", tmpSqlite.Name())
+	c.Stdin = sqlF
+	c.Stdout = tmpCsv
+	c.Stderr = &selectErr
 
-	if err := selectCmd.Run(); err != nil {
+	log.Printf("Extracting data from sqlite: running %v\n", c.String())
+	if err := c.Run(); err != nil {
 		return fmt.Errorf("couldn't select: %v, stderr: %v", err, selectErr.String())
 	}
 	return nil
@@ -186,11 +187,12 @@ func querySqliteToCSV(tmpSqlite *os.File, tmpCsv io.Writer) error {
 
 func csvToJSON(tmpCsv io.Reader, tmpJSON io.Writer) error {
 	var jsonErr bytes.Buffer
-	jsonCmd := exec.Command("/usr/bin/python3", "csv2json2.py")
-	jsonCmd.Stdout = tmpJSON
-	jsonCmd.Stdin = tmpCsv
-	jsonCmd.Stderr = &jsonErr
-	if err := jsonCmd.Run(); err != nil {
+	c := exec.Command("/usr/bin/python3", "csv2json2.py")
+	c.Stdout = tmpJSON
+	c.Stdin = tmpCsv
+	c.Stderr = &jsonErr
+	log.Printf("Converting to JSON: running %v\n", c.String())
+	if err := c.Run(); err != nil {
 		return fmt.Errorf("couldn't convert to json: %v, stderr: %v", err, jsonErr.String())
 	}
 	return nil

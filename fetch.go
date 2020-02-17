@@ -61,6 +61,9 @@ func fetchInternal(r *http.Request) error {
 
 	bkt := client.Bucket(*bucketName)
 	t := lmt
+	if _, err := zipTmp.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
 	if err = writeToGCS(ctx, bkt.Object("prism.zip/"+t.Format(time.RFC3339)), zipTmp); err != nil {
 		return err
 	}
@@ -123,12 +126,10 @@ func fetchInternal(r *http.Request) error {
 		return err
 	}
 
-	// Rewind, ready to pipe in to next command.
+	// Save CSV to GCS
 	if _, err := tmpCSV.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
-
-	// Save CSV to GCS
 	if err := writeToGCS(ctx, bkt.Object("prism.csv/"+t.Format(time.RFC3339)), tmpCSV); err != nil {
 		return err
 	}
@@ -151,7 +152,13 @@ func fetchInternal(r *http.Request) error {
 	}
 
 	// Save JSON to GCS
+	if _, err := tmpJSON.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
 	if err := writeToGCS(ctx, bkt.Object("prism.json/"+t.Format(time.RFC3339)), tmpJSON); err != nil {
+		return err
+	}
+	if _, err := tmpJSON.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
 	if err := writeToGCS(ctx, bkt.Object("prism.json/latest"), tmpJSON); err != nil {
@@ -225,12 +232,9 @@ func csvToJSON(tmpCsv io.Reader, tmpJSON io.Writer) error {
 	return nil
 }
 
-func writeToGCS(ctx context.Context, o *storage.ObjectHandle, f *os.File) error {
+func writeToGCS(ctx context.Context, o *storage.ObjectHandle, f io.Reader) error {
 	log.Printf("writing to GCS: %v\n", o.ObjectName())
 	// We've just written to most of these files, so cursor is at the end. Rewind.
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
 	w := o.NewWriter(ctx)
 	_, err := io.Copy(w, f)
 	if err != nil {

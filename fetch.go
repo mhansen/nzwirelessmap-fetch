@@ -122,10 +122,10 @@ func fetchInternal(r *http.Request) error {
 	}
 
 	// Save JSON to GCS
-	if err := writeToGCS(ctx, bkt.Object("prism.json/"+tSuffix), bytes.NewReader(tmpJSON.Bytes())); err != nil {
+	if err := writeToGCS(ctx, bkt.Object("prism.json/latest"), bytes.NewReader(tmpJSON.Bytes())); err != nil {
 		return err
 	}
-	if err := writeToGCS(ctx, bkt.Object("prism.json/latest"), bytes.NewReader(tmpJSON.Bytes())); err != nil {
+	if err := writeToGCS(ctx, bkt.Object("prism.json/"+tSuffix), bytes.NewReader(tmpJSON.Bytes())); err != nil {
 		return err
 	}
 

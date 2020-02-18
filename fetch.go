@@ -40,11 +40,12 @@ func fetchInternal(r *http.Request) error {
 
 	log.Printf("Headers: %+v\n", resp.Header)
 
-	lmt, err := lastModifiedTime(resp)
+	t, err := lastModifiedTime(resp)
 	if err != nil {
 		return err
 	}
-	log.Printf("Last Modified time: %v\n", lmt)
+	log.Printf("Last Modified time: %v\n", t)
+	bkt := client.Bucket(*bucketName)
 
 	var zipTmp bytes.Buffer
 	n, err := io.Copy(&zipTmp, resp.Body)
@@ -53,9 +54,8 @@ func fetchInternal(r *http.Request) error {
 	}
 	log.Printf("fetched %v bytes\n", n)
 
-	bkt := client.Bucket(*bucketName)
-	t := lmt
-	if err = writeToGCS(ctx, bkt.Object("prism.zip/"+t.Format(time.RFC3339)), bytes.NewReader(zipTmp.Bytes())); err != nil {
+	tSuffix := t.Format(time.RFC3339)
+	if err = writeToGCS(ctx, bkt.Object("prism.zip/"+tSuffix), bytes.NewReader(zipTmp.Bytes())); err != nil {
 		return err
 	}
 
@@ -111,7 +111,7 @@ func fetchInternal(r *http.Request) error {
 	}
 
 	// Save CSV to GCS
-	if err := writeToGCS(ctx, bkt.Object("prism.csv/"+t.Format(time.RFC3339)), bytes.NewReader(tmpCSV.Bytes())); err != nil {
+	if err := writeToGCS(ctx, bkt.Object("prism.csv/"+tSuffix), bytes.NewReader(tmpCSV.Bytes())); err != nil {
 		return err
 	}
 
@@ -122,7 +122,7 @@ func fetchInternal(r *http.Request) error {
 	}
 
 	// Save JSON to GCS
-	if err := writeToGCS(ctx, bkt.Object("prism.json/"+t.Format(time.RFC3339)), bytes.NewReader(tmpJSON.Bytes())); err != nil {
+	if err := writeToGCS(ctx, bkt.Object("prism.json/"+tSuffix), bytes.NewReader(tmpJSON.Bytes())); err != nil {
 		return err
 	}
 	if err := writeToGCS(ctx, bkt.Object("prism.json/latest"), bytes.NewReader(tmpJSON.Bytes())); err != nil {

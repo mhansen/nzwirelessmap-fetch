@@ -45,8 +45,28 @@ func fetchInternal(r *http.Request) error {
 		return err
 	}
 	log.Printf("Last Modified time: %v\n", t)
+	tSuffix := t.Format(time.RFC3339)
 	bkt := client.Bucket(*bucketName)
+	blobJSONLatest := bkt.Object("prism.json/latest")
+	blobJSON := bkt.Object("prism.json/" + tSuffix)
+	blobCSV := bkt.Object("prism.csv/" + tSuffix)
+	blobZIP := bkt.Object("prism.zip/" + tSuffix)
 
+	// Check if we've already created prism.json/{{timestamp}}.
+	// If we've already created this file, this means we can skip a bunch of work.
+	// This depends on the Last-Modified-Time in RSM's web server working, but
+	// it should work.
+	exists, err := objectExists(ctx, blobJSON)
+	if err != nil {
+		return err
+	}
+	if exists {
+		log.Printf("exiting early: we have already created %v, no need to redo", blobJSON.ObjectName())
+		return nil
+	}
+	log.Printf("%v does not already exist: fetching...", blobJSON.ObjectName())
+
+	// Read in the response body: now that we've confirmed this is new data, we should load it in.
 	var zipTmp bytes.Buffer
 	n, err := io.Copy(&zipTmp, resp.Body)
 	if err != nil {
@@ -54,23 +74,26 @@ func fetchInternal(r *http.Request) error {
 	}
 	log.Printf("fetched %v bytes\n", n)
 
-	tSuffix := t.Format(time.RFC3339)
-	if err = writeToGCS(ctx, bkt.Object("prism.zip/"+tSuffix), bytes.NewReader(zipTmp.Bytes())); err != nil {
+	// Save the prism.zip to a timestamped file on GCS.
+	if err = writeToGCS(ctx, blobZIP, bytes.NewReader(zipTmp.Bytes())); err != nil {
 		return err
 	}
 
+	// Decode the prism.zip file
 	log.Println("opening zip")
 	zipR, err := zip.NewReader(bytes.NewReader(zipTmp.Bytes()), int64(zipTmp.Len()))
 	if err != nil {
 		return fmt.Errorf("error opening zip: %v", err)
 	}
 
+	// Find prism.mdb inside the prism.zip file
 	log.Println("finding prism.mdb")
 	prismMDB, err := findPrismMdb(zipR)
 	if err != nil {
 		return fmt.Errorf("couldn't find prism.mdb: %v", err)
 	}
 
+	// Read prism.mdb into a tmpfile. mdb-sqlite requires a file: won't work with stdin.
 	log.Println("opening prism.mdb")
 	mdbR, err := prismMDB.Open()
 	if err != nil {
@@ -92,7 +115,7 @@ func fetchInternal(r *http.Request) error {
 		return fmt.Errorf("couldn't read prism.mdb from zip: %v", err)
 	}
 
-	// Make an output tmpfile
+	// Make an output tmpfile for the sqlite3 database. stdout isn't enough.
 	tmpSqlite, err := tempFile("prism.sqlite3")
 	if err != nil {
 		return err
@@ -105,13 +128,14 @@ func fetchInternal(r *http.Request) error {
 		return err
 	}
 
+	// Query sqlite to CSV
 	var tmpCSV bytes.Buffer
 	if err := querySqliteToCSV(tmpSqlite, &tmpCSV); err != nil {
 		return err
 	}
 
-	// Save CSV to GCS
-	if err := writeToGCS(ctx, bkt.Object("prism.csv/"+tSuffix), bytes.NewReader(tmpCSV.Bytes())); err != nil {
+	// Save prism.csv to GCS
+	if err := writeToGCS(ctx, blobCSV, bytes.NewReader(tmpCSV.Bytes())); err != nil {
 		return err
 	}
 
@@ -122,14 +146,35 @@ func fetchInternal(r *http.Request) error {
 	}
 
 	// Save JSON to GCS
-	if err := writeToGCS(ctx, bkt.Object("prism.json/latest"), bytes.NewReader(tmpJSON.Bytes())); err != nil {
+	if err := writeToGCS(ctx, blobJSONLatest, bytes.NewReader(tmpJSON.Bytes())); err != nil {
 		return err
 	}
-	if err := writeToGCS(ctx, bkt.Object("prism.json/"+tSuffix), bytes.NewReader(tmpJSON.Bytes())); err != nil {
+	// Finally save to a timestamped JSON file. This is a history, as well as a
+	// way to tell if the pipeline completed end-to-end (above we check if this
+	// file exists to see if we can save work).
+	if err := writeToGCS(ctx, blobJSON, bytes.NewReader(tmpJSON.Bytes())); err != nil {
 		return err
 	}
 
+	// Success!
 	return nil
+}
+
+func objectExists(ctx context.Context, blob *storage.ObjectHandle) (bool, error) {
+	attrs, err := blob.Attrs(ctx)
+	if err != nil {
+		log.Printf("got err getting attrs on %v: %v", blob.ObjectName(), err)
+		if err == storage.ErrObjectNotExist {
+			return false, nil
+		}
+		// We don't know if the object exists, other error getting attrs.
+		return false, fmt.Errorf("couldn't get attrs on %v: %v", blob.ObjectName(), err)
+	}
+
+	log.Printf("got attrs for %v: %v", blob.ObjectName(), attrs)
+
+	// prism.json/{{timestamp}} *does* exist already! No need to continue.
+	return true, nil
 }
 
 func lastModifiedTime(resp *http.Response) (lmt time.Time, err error) {

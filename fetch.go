@@ -75,7 +75,7 @@ func fetchInternal(r *http.Request) error {
 	log.Printf("fetched %v bytes\n", n)
 
 	// Save the prism.zip to a timestamped file on GCS.
-	if err = writeToGCS(ctx, blobZIP, bytes.NewReader(zipTmp.Bytes())); err != nil {
+	if err = writeToGCS(ctx, blobZIP, bytes.NewReader(zipTmp.Bytes()), "NEARLINE"); err != nil {
 		return err
 	}
 
@@ -135,7 +135,7 @@ func fetchInternal(r *http.Request) error {
 	}
 
 	// Save prism.csv to GCS
-	if err := writeToGCS(ctx, blobCSV, bytes.NewReader(tmpCSV.Bytes())); err != nil {
+	if err := writeToGCS(ctx, blobCSV, bytes.NewReader(tmpCSV.Bytes()), "NEARLINE"); err != nil {
 		return err
 	}
 
@@ -146,13 +146,13 @@ func fetchInternal(r *http.Request) error {
 	}
 
 	// Save JSON to GCS
-	if err := writeToGCS(ctx, blobJSONLatest, bytes.NewReader(tmpJSON.Bytes())); err != nil {
+	if err := writeToGCS(ctx, blobJSONLatest, bytes.NewReader(tmpJSON.Bytes()), "STANDARD"); err != nil {
 		return err
 	}
 	// Finally save to a timestamped JSON file. This is a history, as well as a
 	// way to tell if the pipeline completed end-to-end (above we check if this
 	// file exists to see if we can save work).
-	if err := writeToGCS(ctx, blobJSON, bytes.NewReader(tmpJSON.Bytes())); err != nil {
+	if err := writeToGCS(ctx, blobJSON, bytes.NewReader(tmpJSON.Bytes()), "NEARLINE"); err != nil {
 		return err
 	}
 
@@ -244,10 +244,14 @@ func csvToJSON(tmpCsv io.Reader, tmpJSON io.Writer) error {
 	return nil
 }
 
-func writeToGCS(ctx context.Context, o *storage.ObjectHandle, f io.Reader) error {
+func writeToGCS(ctx context.Context, o *storage.ObjectHandle, f io.Reader, storageClass string) error {
 	log.Printf("writing to GCS: %v\n", o.ObjectName())
 	// We've just written to most of these files, so cursor is at the end. Rewind.
 	w := o.NewWriter(ctx)
+	// From docs:
+	// Attributes can be set on the object by modifying the returned Writer's
+	// ObjectAttrs field before the first call to Write.
+	w.ObjectAttrs.StorageClass = storageClass
 	_, err := io.Copy(w, f)
 	if err != nil {
 		return fmt.Errorf("error writing to cloud storage: %v", err)

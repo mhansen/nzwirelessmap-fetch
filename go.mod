@@ -2,4 +2,4 @@ module nzwirelessmap-fetch
 
 go 1.13
 
-require cloud.google.com/go/storage v1.21.0
+require cloud.google.com/go/storage v1.22.0

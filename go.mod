@@ -2,7 +2,7 @@ module nzwirelessmap-fetch
 
 go 1.21
 
-require cloud.google.com/go/storage v1.48.0
+require cloud.google.com/go/storage v1.50.0
 
 require (
 	cel.dev/expr v0.16.1 // indirect

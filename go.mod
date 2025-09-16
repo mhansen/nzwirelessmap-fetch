@@ -4,7 +4,7 @@ go 1.23.0
 
 toolchain go1.25.1
 
-require cloud.google.com/go/storage v1.56.1
+require cloud.google.com/go/storage v1.56.2
 
 require (
 	cel.dev/expr v0.24.0 // indirect

@@ -1,10 +1,10 @@
 module nzwirelessmap-fetch
 
-go 1.23.0
+go 1.24.0
 
 toolchain go1.25.1
 
-require cloud.google.com/go/storage v1.56.2
+require cloud.google.com/go/storage v1.57.0
 
 require (
 	cel.dev/expr v0.24.0 // indirect
@@ -52,6 +52,6 @@ require (
 	google.golang.org/genproto v0.0.0-20250603155806-513f23925822 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250818200422-3122310a409c // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250818200422-3122310a409c // indirect
-	google.golang.org/grpc v1.74.2 // indirect
+	google.golang.org/grpc v1.74.3 // indirect
 	google.golang.org/protobuf v1.36.7 // indirect
 )

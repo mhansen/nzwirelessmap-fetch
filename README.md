@@ -3,6 +3,8 @@
 This project fetched updates from New Zealand's Radio Spectrum Management
 database of radio spectrum licenses.
 
+This powered https://wirelessmap.markhansen.co.nz/.
+
 We converted the Microsoft Access file to SQLite then JSON, saved the data into
 Cloud Storage.
 
